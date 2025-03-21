@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import "./App.css";
 import {
   FaSearch,
@@ -13,6 +13,11 @@ import {
   FaInfoCircle,
   FaRobot,
   FaHistory,
+  FaMicrophone,
+  FaMicrophoneSlash,
+  FaCamera,
+  FaImage,
+  FaSpinner,
 } from "react-icons/fa";
 
 function App() {
@@ -31,6 +36,15 @@ function App() {
   const [activeTab, setActiveTab] = useState("results");
   const [enhancedInput, setEnhancedInput] = useState("");
   const [showEnhancedModal, setShowEnhancedModal] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imagePredictions, setImagePredictions] = useState([]);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const recognitionRef = useRef(null);
+  const fileInputRef = useRef(null);
+
   // Load search history from localStorage on component mount
   useEffect(() => {
     const savedHistory = localStorage.getItem("searchHistory");
@@ -41,6 +55,42 @@ function App() {
         console.error("Error loading search history:", e);
       }
     }
+
+    // Initialize speech recognition
+    if ("SpeechRecognition" in window || "webkitSpeechRecognition" in window) {
+      const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+
+      recognitionRef.current.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map((result) => result[0])
+          .map((result) => result.transcript)
+          .join("");
+
+        setBusinessDesc(transcript);
+      };
+
+      recognitionRef.current.onerror = (event) => {
+        console.error("Speech recognition error", event.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        if (isListening) {
+          recognitionRef.current.start();
+        }
+      };
+    }
+
+    return () => {
+      // Clean up speech recognition on component unmount
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
   }, []);
 
   // Save search history to localStorage when it changes
@@ -49,6 +99,73 @@ function App() {
       localStorage.setItem("searchHistory", JSON.stringify(searchHistory));
     }
   }, [searchHistory]);
+
+  // Toggle speech recognition
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert("Speech recognition is not supported in your browser.");
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
+  };
+
+  // Handle image upload
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setSelectedImage(file);
+
+    // Create image preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result);
+      setShowImageModal(true);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Trigger file input click
+  const triggerFileInput = () => {
+    fileInputRef.current.click();
+  };
+
+  // Process uploaded image
+  const processImage = async () => {
+    if (!selectedImage) return;
+
+    setImageLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", selectedImage);
+
+      const response = await fetch("http://localhost:5000/analyze_image", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to analyze image");
+      }
+
+      const data = await response.json();
+      setImagePredictions(data.predictions || []);
+      setBusinessDesc(data.suggested_description || "");
+      setShowImageModal(false);
+    } catch (error) {
+      console.error("Error processing image:", error);
+      alert("Failed to analyze image. Please try again.");
+    } finally {
+      setImageLoading(false);
+    }
+  };
 
   const enhanceBusinessDescription = async (rawInput) => {
     if (!rawInput.trim()) return "";
@@ -118,8 +235,15 @@ Business description: "${rawInput}"
       return rawInput; // Fall back to original input on error
     }
   };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // If still listening, stop speech recognition
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
 
     const query = businessDesc.trim();
     if (!query) {
@@ -287,8 +411,52 @@ Business description: "${rawInput}"
               <li>Include key products or services you provide</li>
               <li>Mention manufacturing processes or methods if applicable</li>
               <li>Use industry-specific terminology when possible</li>
+              <li>
+                You can now use the microphone icon to dictate your business
+                description
+              </li>
+              <li>
+                Try the new image upload feature to analyze products in your
+                business
+              </li>
             </ul>
             <button onClick={() => setShowInfoModal(false)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {showImageModal && (
+        <div className="modal-backdrop">
+          <div className="image-analysis-modal">
+            <h2>
+              <FaImage /> Image Analysis
+            </h2>
+            <div className="image-preview-container">
+              {imagePreview && (
+                <img
+                  src={imagePreview}
+                  alt="Uploaded business"
+                  className="image-preview"
+                />
+              )}
+            </div>
+            <p>
+              Upload a photo of your business or products to help identify the
+              appropriate NIC code.
+            </p>
+            {imageLoading ? (
+              <div className="image-processing-indicator">
+                <FaSpinner className="spinning-icon" />
+                <p>Analyzing image...</p>
+              </div>
+            ) : (
+              <div className="image-modal-buttons">
+                <button onClick={() => setShowImageModal(false)}>Cancel</button>
+                <button onClick={processImage} className="process-image-button">
+                  Analyze Image
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -323,6 +491,27 @@ Business description: "${rawInput}"
                 <button onClick={applyGrammarCorrection}>Apply</button>
               </div>
             )}
+
+            {imagePredictions.length > 0 && (
+              <div className="image-predictions-container">
+                <h4>
+                  <FaCamera /> Image Analysis Results
+                </h4>
+                <div className="predictions-list">
+                  {imagePredictions.map((prediction, index) => (
+                    <div key={index} className="prediction-item">
+                      <span className="prediction-label">
+                        {prediction.label}
+                      </span>
+                      <span className="prediction-probability">
+                        {(prediction.probability * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {enhancedInput && enhancedInput !== businessDesc && (
               <div className="enhanced-query-notice">
                 <FaRobot className="ai-icon" />
@@ -371,13 +560,55 @@ Business description: "${rawInput}"
                   <FaRegLightbulb className="input-icon" />
                   Describe your business activity
                 </label>
-                <textarea
-                  id="businessDesc"
-                  value={businessDesc}
-                  onChange={(e) => setBusinessDesc(e.target.value)}
-                  placeholder="e.g. Manufacture of mineral water, Production of cement, Software development services"
-                  rows="3"
-                />
+                <div className="input-controls">
+                  <div className="textarea-with-mic">
+                    <textarea
+                      id="businessDesc"
+                      value={businessDesc}
+                      onChange={(e) => setBusinessDesc(e.target.value)}
+                      placeholder="e.g. Manufacture of mineral water, Production of cement, Software development services"
+                      rows="3"
+                    />
+                    <div className="input-buttons">
+                      <button
+                        type="button"
+                        className={`mic-button ${
+                          isListening ? "listening" : ""
+                        }`}
+                        onClick={toggleListening}
+                        title={
+                          isListening ? "Stop listening" : "Start voice input"
+                        }
+                      >
+                        {isListening ? (
+                          <FaMicrophone className="mic-icon active" />
+                        ) : (
+                          <FaMicrophoneSlash className="mic-icon" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="camera-button"
+                        onClick={triggerFileInput}
+                        title="Upload business image"
+                      >
+                        <FaCamera className="camera-icon" />
+                      </button>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleImageUpload}
+                        accept="image/*"
+                        style={{ display: "none" }}
+                      />
+                    </div>
+                  </div>
+                  {isListening && (
+                    <div className="listening-indicator">
+                      <span className="pulse-dot"></span> Listening... speak now
+                    </div>
+                  )}
+                </div>
               </div>
 
               {isVague && vagueSuggestions.length > 0 && (
