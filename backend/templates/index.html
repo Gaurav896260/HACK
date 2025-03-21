@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NIC Code Finder</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      #results {
+        margin-top: 20px;
+      }
+      .result-item {
+        margin-bottom: 10px;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>NIC Code Finder</h1>
+    <input
+      type="text"
+      id="userInput"
+      placeholder="Enter your business description"
+    />
+    <button onclick="getNICCodes()">Get NIC Codes</button>
+    <div id="results"></div>
+
+    <script>
+      function getNICCodes() {
+        const userInput = document.getElementById("userInput").value;
+        fetch("/get_nic_codes", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ input: userInput }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            const resultsDiv = document.getElementById("results");
+            resultsDiv.innerHTML = "<h2>Top 3 NIC Code Suggestions:</h2>";
+            data.forEach((item) => {
+              resultsDiv.innerHTML += `
+                        <div class="result-item">
+                            <strong>NIC Code:</strong> ${item.nic_code}<br>
+                            <strong>Description:</strong> ${item.description}
+                        </div>
+                    `;
+            });
+          })
+          .catch((error) => console.error("Error:", error));
+      }
+    </script>
+  </body>
+</html>
